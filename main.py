@@ -43,8 +43,26 @@ SUPPORTED_FORMATS = {
     "MM/DD/YYYY": "%m/%d/%Y",
     "YYYY-MM-DD": "%Y-%m-%d",
 }
-DEFAULT_TZ = "America/New_York"
 
+DEFAULT_TZ = "Asia/Bangkok"
+#DEFAULT_TZ = "America/New_York"
+COMMON_TZS = [
+    "UTC",
+    # Americas
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Toronto", "America/Mexico_City", "America/Sao_Paulo",
+    # Europe
+    "Europe/London", "Europe/Berlin", "Europe/Paris", "Europe/Madrid", "Europe/Rome",
+    "Europe/Warsaw", "Europe/Istanbul", "Europe/Moscow",
+    # Africa
+    "Africa/Cairo", "Africa/Johannesburg", "Africa/Nairobi",
+    # Middle East / Asia
+    "Asia/Dubai", "Asia/Kolkata", "Asia/Dhaka", "Asia/Bangkok", "Asia/Singapore",
+    "Asia/Hong_Kong", "Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai",
+    # Oceania
+    "Australia/Sydney", "Pacific/Auckland",
+    "Custom…",
+]
 
 def today_in_tz(tz_name: str) -> date:
     if ZoneInfo is None:
@@ -326,23 +344,37 @@ class CalendarPopup(tk.Toplevel):
         self.draw()
 
     def draw(self):
+    # Clear previous buttons/labels
         for w in self.grid_frame.winfo_children():
             w.destroy()
+
         y, m = self.year.get(), self.month.get()
         self.title_lbl.config(text=f"{pycalendar.month_name[m]} {y}")
-        # Weekday header
-        for i, wd in enumerate(["Mo","Tu","We","Th","Fr","Sa","Su"]):
-            ttk.Label(self.grid_frame, text=wd, width=3, anchor="center").grid(row=0, column=i, padx=2, pady=2)
-        # Days
-        cal = pycalendar.Calendar(firstweekday=0)  # Monday
+
+        # Weekday header (Monday first)
+        # You can switch to shorter labels like ["Mo","Tu","We","Th","Fr","Sa","Su"] if you prefer
+        weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        for i, wd in enumerate(weekday_labels):
+            ttk.Label(self.grid_frame, text=wd, width=4, anchor="center").grid(
+                row=0, column=i, padx=2, pady=2
+            )
+
+        # Days grid (Calendar with Monday as first weekday)
+        cal = pycalendar.Calendar(firstweekday=0)  # 0 = Monday
         row = 1
         for week in cal.monthdayscalendar(y, m):
             for col, d in enumerate(week):
                 if d == 0:
-                    ttk.Label(self.grid_frame, text="").grid(row=row, column=col, padx=1, pady=1)
+                    ttk.Label(self.grid_frame, text="", width=4).grid(
+                        row=row, column=col, padx=1, pady=1
+                    )
                 else:
-                    b = ttk.Button(self.grid_frame, text=str(d), width=3,
-                                   command=lambda dd=d: self.pick(date(y, m, dd)))
+                    b = ttk.Button(
+                        self.grid_frame,
+                        text=str(d),
+                        width=4,
+                        command=lambda dd=d: self.pick(date(y, m, dd)),
+                    )
                     b.grid(row=row, column=col, padx=1, pady=1)
             row += 1
 
@@ -360,7 +392,7 @@ class App(tk.Tk):
         self.minsize(840, 660)
         # Modes: date_to_days, days_to_date, days_from_end
         self.mode = tk.StringVar(value="date_to_days")
-        self.fmt = tk.StringVar(value="MM/DD/YYYY")
+        self.fmt = tk.StringVar(value="DD/MM/YYYY")
         self.tz = tk.StringVar(value=DEFAULT_TZ)
         self.custom_start_enabled = tk.BooleanVar(value=False)
         self.google_checked = tk.BooleanVar(value=False)
@@ -397,62 +429,6 @@ class App(tk.Tk):
                   self.recur_until_entry):
             w.configure(state=state_std)
         
-
-    def _compose_rrule(self, dt_for_freq: date | None) -> str | None:
-        """Build an RRULE string from the recurrence UI. If 'none', return None."""
-        mode = self.recur_mode.get()
-        if mode == "none":
-            return None
-
-        if mode == "custom":
-            raw = self.recur_custom.get().strip()
-            if not raw:
-                raise ValueError("Custom RRULE is empty.")
-            # Accept with or without 'RRULE:' prefix:
-            return raw[6:] if raw.upper().startswith("RRULE:") else raw
-
-        # Preset → FREQ
-        freq_map = {
-            "daily": "DAILY",
-            "weekly": "WEEKLY",
-            "monthly": "MONTHLY",
-            "yearly": "YEARLY",
-        }
-        if mode not in freq_map:
-            return None
-        parts = [f"FREQ={freq_map[mode]}"]
-
-        # INTERVAL
-        iv = self.recur_interval.get().strip()
-        if iv:
-            try:
-                ival = int(iv)
-                if ival > 1:
-                    parts.append(f"INTERVAL={ival}")
-            except ValueError:
-                raise ValueError("Interval must be an integer.")
-
-        # COUNT or UNTIL
-        cnt = self.recur_count.get().strip()
-        until_txt = self.recur_until.get().strip()
-        if cnt:
-            try:
-                cval = int(cnt)
-                if cval > 0:
-                    parts.append(f"COUNT={cval}")
-            except ValueError:
-                raise ValueError("Count must be an integer.")
-        elif until_txt:
-            fmt_key = self.fmt.get()
-            try:
-                d_until = parse_date(until_txt, fmt_key)
-            except Exception:
-                raise ValueError("Invalid UNTIL date.")
-            parts.append(f"UNTIL={_format_until_utc(d_until)}")
-        
-        return ";".join(parts)
-
-
     def _build(self) -> None:
         pad = dict(padx=10, pady=8)
 
@@ -466,8 +442,19 @@ class App(tk.Tk):
         fmt_cb = ttk.Combobox(settings, textvariable=self.fmt, values=list(SUPPORTED_FORMATS.keys()), width=14, state="readonly")
         fmt_cb.grid(row=0, column=1, sticky="w", padx=(6, 20))
         ttk.Label(settings, text="Timezone:").grid(row=0, column=2, sticky="w")
-        self.tz_entry = ttk.Entry(settings, textvariable=self.tz, width=25)
-        self.tz_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        # Use a read-only Combobox so users pick a valid IANA tz
+        self.tz_cb = ttk.Combobox(
+            settings,
+            textvariable=self.tz,   # still bound to self.tz StringVar, so the rest of your code keeps working
+            values=COMMON_TZS,
+            width=25,
+            state="readonly",       
+        )
+        # Set default to DEFAULT_TZ if present, else fall back to UTC
+        self.tz.set(DEFAULT_TZ if DEFAULT_TZ in COMMON_TZS else "UTC")
+        self.tz_cb.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        # Bind change handler for the Custom… option
+        self.tz_cb.bind("<<ComboboxSelected>>", self._on_tz_changed)
 
         # Mode selectors
         mode_fr = ttk.LabelFrame(self, text="Mode")
@@ -683,6 +670,39 @@ class App(tk.Tk):
         self._set_output("")
         self.save_btn.configure(state="disabled")
 
+    def _on_tz_changed(self, *_):
+        if self.tz.get() == "Custom…":
+            import tkinter.simpledialog as sd
+            custom = sd.askstring(
+                "Custom Timezone",
+                "Enter IANA timezone (e.g., Europe/Prague):"
+            )
+            # If user typed something, try to accept it; otherwise revert to default
+            if custom and custom.strip():
+                custom = custom.strip()
+                # Optional: validate immediately so users see issues early
+                try:
+                    # Will raise if invalid on some platforms without tzdata
+                    if ZoneInfo is not None:
+                        _= ZoneInfo(custom)
+                    # Set and show the raw custom value in the combobox text
+                    self.tz.set(custom)
+                    # Clear selection in dropdown so the text shows the custom tz
+                    self.tz_cb.set(custom)
+                except Exception:
+                    messagebox.showerror(
+                        "Invalid timezone",
+                        f"'{custom}' is not a valid IANA timezone.\n"
+                        "Examples: Asia/Bangkok, Europe/London, America/Los_Angeles"
+                    )
+                    # revert to default safe value
+                    self.tz.set(DEFAULT_TZ)
+                    self.tz_cb.set(DEFAULT_TZ)
+            else:
+                # user canceled — revert
+                self.tz.set(DEFAULT_TZ)
+                self.tz_cb.set(DEFAULT_TZ)
+
     def _refresh_timed(self) -> None:
         state = "!disabled" if self.timed_enabled.get() else "disabled"
         for w in (self.time_entry, self.duration_entry):
@@ -734,9 +754,9 @@ class App(tk.Tk):
                 abs_days = abs(delta_days)
                 dir_word = "ahead" if delta_days >= 0 else "ago"
                 txt = (
-                    f"Start: {format_date(start, fmt_key)}"  # type: ignore[arg-type]
-                    f"End:   {format_date(end, fmt_key)}"
-                    f"Result: {delta_days} day(s) ({abs_days} {dir_word} of start)."
+                    f"Start: {format_date(start, fmt_key)}\n"  # type: ignore[arg-type]
+                    f"End:   {format_date(end, fmt_key)}\n"
+                    f"Result: {delta_days} day(s) ({abs_days} {dir_word} of start).\n"
                 )
 
             elif mode == "days_to_date":
@@ -752,9 +772,9 @@ class App(tk.Tk):
                 self.computed_date = end
                 direction = "from" if n >= 0 else "before"
                 txt = (
-                    f"Start: {format_date(start, fmt_key)}"  # type: ignore[arg-type]
-                    f"Days:  {n}"
-                    f"Result: {format_date(end, fmt_key)} ({abs(n)} day(s) {direction} start)."
+                    f"Start: {format_date(start, fmt_key)}\n"  # type: ignore[arg-type]
+                    f"Days:  {n}\n"
+                    f"Result: {format_date(end, fmt_key)} ({abs(n)} day(s) {direction} start).\n"
                 )
 
             else:  # days_from_end
@@ -773,9 +793,9 @@ class App(tk.Tk):
                 self.computed_days = n
                 self.computed_date = start_calc
                 txt = (
-                    f"End:   {format_date(end, fmt_key)}"
-                    f"Days to subtract: {n}"
-                    f"Result (start date): {format_date(start_calc, fmt_key)}."
+                    f"End:   {format_date(end, fmt_key)}\n"
+                    f"Days to subtract: {n}\n"
+                    f"Result (start date): {format_date(start_calc, fmt_key)}.\n"
                 )
 
             # Build RRULE from UI (None if off)
@@ -844,7 +864,7 @@ class App(tk.Tk):
             if not did_any:
                 status_lines.append("(No .ics or Google insert selected.)")
 
-            self._set_output(txt + "" + "".join(status_lines))
+            self._set_output(txt + "\n" + "\n".join(status_lines))
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
