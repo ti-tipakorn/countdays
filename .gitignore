@@ -5,3 +5,6 @@ gcal_helper-2.py
 2_options.py
 .venv/
 build/
+main.spec
+DateCounterICS.spec
+gcal_helper-2.py
