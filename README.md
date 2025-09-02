@@ -23,7 +23,9 @@ It supports `.ics` file export (for Outlook/Apple/Google Calendar import) and **
   - Requires a Google Cloud OAuth client (`credentials.json`).  
 - **GUI** built with `tkinter` (no external GUI libraries required).  
 - Supports multiple date formats (`MM/DD/YYYY`, `DD/MM/YYYY`, `YYYY-MM-DD`).  
-- Timezone-aware (defaults to `America/New_York`).
+- Timezone-aware (defaults to `America/New_York`).  
+  - Dropdown of common IANA timezones (e.g. `Asia/Bangkok`, `Europe/London`).  
+  - "Custom…" option lets you enter any valid timezone manually.
 
 ---
 
@@ -33,7 +35,7 @@ It supports `.ics` file export (for Outlook/Apple/Google Calendar import) and **
 - Python 3.9+
 - Pip packages:
   ```bash
-  pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+  pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib tzdata
   ```
 
 ### Clone & Run
@@ -83,11 +85,85 @@ Or check **Google Calendar insert** → the event is created instantly in your c
 
 ---
 
-## ⚠️ Notes
+## 📆 Recurrence Rules (RRULE)
 
-- For `.ics` export, events use proper RFC 5545 formatting (CRLF endings, UID, DTSTAMP).  
-- Recurrence is supported with `RRULE`. Example: `FREQ=YEARLY;COUNT=3`.  
-- When using Google Calendar, you must have API enabled in your Google Cloud project.  
+The app supports **recurring events** using the [iCalendar RRULE standard (RFC 5545)](https://icalendar.org/iCalendar-RFC-5545/3-8-5-3-recurrence-rule.html).  
+This means you can repeat an event daily, weekly, monthly, yearly, or even define a custom pattern.
+
+### 🔧 Built-in options
+In the GUI, you can quickly choose:
+
+- **Daily** – repeats every N days  
+- **Weekly** – repeats every N weeks  
+- **Monthly** – repeats every N months  
+- **Yearly** – repeats every N years  
+- **Custom…** – enter your own RRULE string  
+
+You can also add:
+- **Interval** → e.g. every 2 weeks (`INTERVAL=2`)  
+- **Count** → e.g. repeat 5 times only (`COUNT=5`)  
+- **Until** → stop at a specific date (`UNTIL=20251231T235959Z`)  
+
+### 🖊 Custom RRULE syntax
+A custom RRULE must start with one or more `KEY=VALUE` pairs, separated by `;`.
+
+Common parts:
+- `FREQ` → frequency (`DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`)
+- `INTERVAL` → step size (default = 1)
+- `BYDAY` → pick specific weekdays (`MO,TU,FR`)
+- `BYMONTHDAY` → pick specific days of the month (`15`, `1,-1`)
+- `BYMONTH` → pick months (`1`=Jan, `12`=Dec)
+- `COUNT` → stop after N repeats
+- `UNTIL` → stop at a specific date/time (in UTC, `YYYYMMDDTHHMMSSZ`)
+
+### 📋 Examples
+
+**1. Every day for 10 days**
+```
+RRULE:FREQ=DAILY;COUNT=10
+```
+
+**2. Every other day (forever)**
+```
+RRULE:FREQ=DAILY;INTERVAL=2
+```
+
+**3. Every Monday and Wednesday for 5 weeks**
+```
+RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10
+```
+
+**4. Every month on the 15th, 5 occurrences**
+```
+RRULE:FREQ=MONTHLY;BYMONTHDAY=15;COUNT=5
+```
+
+**5. Every year on January 1st, forever**
+```
+RRULE:FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=1
+```
+
+**6. Every last Friday of the month, until end of 2026**
+```
+RRULE:FREQ=MONTHLY;BYDAY=-1FR;UNTIL=20261231T235959Z
+```
+
+**7. Every weekday (Mon–Fri) for 20 occurrences**
+```
+RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;COUNT=20
+```
+
+**8. Every 2 years on Feb 29 (leap years only)**
+```
+RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;INTERVAL=4
+```
+
+### ⚠ Notes
+- `UNTIL` must be in **UTC time** (`Z` at the end).  
+- If you enter `RRULE:` at the start, the app strips it automatically — you can enter either:
+  - `RRULE:FREQ=DAILY;COUNT=5`
+  - or just `FREQ=DAILY;COUNT=5`
+- Not all calendar apps support *all* RRULEs (Google Calendar supports most common ones).
 
 ---
 

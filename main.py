@@ -31,12 +31,18 @@ except Exception:  # Python <3.9 fallback (optional)
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from pathlib import Path
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+import os,sys
 
 # Script directory (robust against PowerShell working-dir issues)
 APP_DIR = Path(__file__).resolve().parent
 CRED_PATH = APP_DIR / "credentials.json"
-TOKEN_PATH = APP_DIR / "token.pickle"
-
+SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 # ------------------------------ Utilities ------------------------------ #
 SUPPORTED_FORMATS = {
     "DD/MM/YYYY": "%d/%m/%Y",
@@ -63,6 +69,44 @@ COMMON_TZS = [
     "Australia/Sydney", "Pacific/Auckland",
     "Custom…",
 ]
+def resource_path(relative: str) -> Path:
+    """Absolute path to resource; works for dev and PyInstaller."""
+    if hasattr(sys, "_MEIPASS"):  # PyInstaller
+        base = Path(sys._MEIPASS)
+    else:
+        base = APP_DIR
+    return base / relative
+
+def app_data_dir(app_name="ICS-date") -> Path:
+    # %APPDATA%\ICS-date  (e.g., C:\Users\<you>\AppData\Roaming\ICS-date)
+    base = Path(os.environ.get("APPDATA", Path.home()))
+    folder = base / app_name
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+# Use Path objects consistently
+CRED_PATH  = resource_path("credentials.json")      # Path
+TOKEN_PATH = app_data_dir() / "token.json"          # Path
+print("Using credentials at:", str(CRED_PATH))
+print("Token will be stored at:", str(TOKEN_PATH))
+
+
+def get_google_creds():
+    creds = None
+    if TOKEN_PATH.exists():
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not CRED_PATH.exists():
+                raise FileNotFoundError(
+                    f"credentials.json not found at {CRED_PATH}. Place your Desktop OAuth file there."
+                )
+            flow = InstalledAppFlow.from_client_secrets_file(str(CRED_PATH), SCOPES)
+            creds = flow.run_local_server(port=0)
+        TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
+    return creds
 
 def today_in_tz(tz_name: str) -> date:
     if ZoneInfo is None:
@@ -244,38 +288,11 @@ def insert_google_calendar(
     duration_minutes: int | None = None,
     rrule: str | None = None,
 ) -> str:
-    """Insert event into primary Google Calendar.
-    - For all_day=True, d_or_dt is a date.
-    - For all_day=False, d_or_dt is a timezone-aware datetime in local tz.
-    """
-    import pickle
-    from googleapiclient.discovery import build
-    from googleapiclient.errors import HttpError
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from google.auth.transport.requests import Request
-
-    SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
-
-    creds = None
-    if TOKEN_PATH.exists():
-        try:
-            creds = pickle.loads(TOKEN_PATH.read_bytes())
-        except Exception:
-            creds = None
-    if not creds or not getattr(creds, "valid", False):
-        if creds and getattr(creds, "expired", False) and getattr(creds, "refresh_token", None):
-            creds.refresh(Request())
-        else:
-            if not CRED_PATH.exists():
-                raise FileNotFoundError(
-                    f"credentials.json not found at {CRED_PATH}. Place your Desktop OAuth file there."
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(str(CRED_PATH), SCOPES)
-            creds = flow.run_local_server(port=0)
-        TOKEN_PATH.write_bytes(pickle.dumps(creds))
-
+    """Insert event into primary Google Calendar."""
     try:
+        creds = get_google_creds()  # unified JSON/token flow
         service = build("calendar", "v3", credentials=creds)
+
         if all_day:
             event = {
                 "summary": summary,
@@ -290,12 +307,12 @@ def insert_google_calendar(
                 "start": {"dateTime": start_local.isoformat()},
                 "end": {"dateTime": end_local.isoformat()},
             }
+
         if rrule:
             event["recurrence"] = [f"RRULE:{rrule}"]
 
         created = service.events().insert(calendarId="primary", body=event).execute()
-        html_link = created.get("htmlLink", "(no link)")
-        return f"Event created: {html_link}"
+        return f"Event created: {created.get('htmlLink', '(no link)')}"
     except HttpError as e:
         return f"Google Calendar API error: {e}"
     except Exception as e:
