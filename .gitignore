@@ -8,3 +8,5 @@ build/
 main.spec
 DateCounterICS.spec
 gcal_helper-2.py
+main.spec
+build/
