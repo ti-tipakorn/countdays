@@ -3,3 +3,5 @@ credentials.json
 gcal_helper.py
 gcal_helper-2.py
 2_options.py
+.venv/
+build/
